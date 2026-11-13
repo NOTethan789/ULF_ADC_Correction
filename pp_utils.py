@@ -8,8 +8,7 @@ import os
 import json
 import pandas as pd
 from glob import glob
-import plotly.express as px
-import matplotlib.pyplot as plt
+
 from tqdm import tqdm
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -229,56 +228,6 @@ def resample_array(img: np.ndarray, current_spacing: np.ndarray, target_spacing:
     img_rs = img_rs_a.numpy()
 
     return img_rs
-
-
-def rot_90_3x3(img: np.ndarray, R: np.ndarray, return_perm: bool = False) -> np.ndarray:
-    """
-    Apply a right-angle (90°) rotation represented by a 3x3 signed-permutation matrix R
-    to a 3D numpy array using transpose + flips (no interpolation).
-
-    Convention:
-      - R maps input coords to output coords: v_out = R @ v_in
-
-    Returns the transformed array.
-    """
-    R = np.asarray(R, dtype=int)
-
-    # Basic validation for signed permutation matrix
-    if R.shape != (3, 3):
-        raise ValueError("R must be 3x3.")
-    if not np.all(np.isin(R, [-1, 0, 1])):
-        raise ValueError("R must contain only -1, 0, 1 for 90° rotations.")
-    if not (np.all(np.sum(np.abs(R), axis=0) == 1) and np.all(np.sum(np.abs(R), axis=1) == 1)):
-        raise ValueError("R must be a signed permutation matrix (one nonzero per row/col).")
-
-    # Apply permutation of axes
-    perm = np.argmax(np.abs(R), axis=1)
-    out = np.transpose(img, axes=tuple(perm))
-
-    # Apply flips for negative directions
-    signs = R[np.arange(3), perm]
-    for out_axis, s in enumerate(signs):
-        if s == -1:
-            out = np.flip(out, axis=out_axis)
-
-    if return_perm:
-        return out, perm
-    else:
-        return out
-
-
-def align_with_lps_ref_frame(img: np.ndarray, aff: np.ndarray):
-
-    R = aff[0:3,0:3]
-    R_norm = R / np.linalg.norm(R, axis=0, keepdims=True)
-    lps_img, perm = rot_90_3x3(img, R_norm, return_perm=True)
-
-    R_perm = R[:, perm]
-    R_flip = abs(R_perm)
-    aff_lps = np.eye(4)
-    aff_lps[0:3, 0:3] = R_flip
-
-    return lps_img, aff_lps
 
 
 def dicom_contrast(dicom_fname: str):
