@@ -3,7 +3,7 @@ MP-PCA denoising of 4D diffusion data.
 """
 
 import numpy as np
-import mpdenoise as mp
+import mppca as mp
 
 
 def apply_mppca(data, default_kernel=True, kernel:str=None):

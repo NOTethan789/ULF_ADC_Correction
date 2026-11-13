@@ -5,7 +5,7 @@
     Inputs are a 4D image with dimentions (X x Y x Z x N)
     
     Usage:
-    import mpdenoise as mp
+    import mppca as mp
     imgdn, sigma, nparameters = mp.denoise(img, kernel='5,5,5')
     
     LICENCE
