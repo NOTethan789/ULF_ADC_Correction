@@ -6,7 +6,7 @@ import nibabel as nib
 import json
 import ants
 from scipy.stats import linregress
-import pp_utils as pp
+import registration as reg
 
 # Constants
 GAMMA = 2.6752218708e8  # Gyro Magnetic Ratio - rad/s/T
@@ -130,7 +130,7 @@ def unpack_A_nii(A_path):
     A_img = A_nii.get_fdata()
 
     aff = A_nii.affine
-    spacing = pp.spacing_from_affine(aff)
+    spacing = reg.spacing_from_affine(aff)
 
     mask = A_img[..., 0] != 0
     A = A_img[mask].T
@@ -261,7 +261,7 @@ def minus_bd_map(s, s0, mask=None):
         raise ValueError(f"Shape mismatch: s {s.shape}, s0 {s0.shape}, mask {mask.shape}")
 
     if mask is None:
-        _mask = pp.get_mask(s0, mask_type=bool)
+        _mask = reg.get_mask(s0, mask_type=bool)
     else:
         _mask = mask.astype(bool)
     valid = (_mask) & (s0>0) & (s>0)
