@@ -2,14 +2,9 @@
 /Archive/
 
 # ---- Data directories (large; not stored on GitHub) ----
-# Everything inside each dataset folder is ignored; only the listed docs/placeholders are kept.
-/b0_mapping/*
-/calibration/*
-/caliber_phantom/*
-/invivo/*
-/scanner_2/*
-/snr/*
-!/calibration/READ_ME.txt
+# Everything inside each dataset folder of data/ is ignored; only the listed docs/placeholders are kept.
+/data/*/*
+!/data/calibration/READ_ME.txt
 
 # ---- Data / image file types, wherever they appear ----
 *.nii

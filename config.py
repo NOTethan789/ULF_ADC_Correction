@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SRC_DIR = ROOT / "src"
+DATA_DIR = ROOT / "data"    # all datasets (not stored on GitHub)
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -51,21 +52,21 @@ CALIBER_ADC_LABELS = {"H2O":[4, 3, 1, 11],
 # Directories
 # --------------------------------------------------------------------------------------
 
-CALIBRATION_DIR = ROOT / "calibration"
+CALIBRATION_DIR = DATA_DIR / "calibration"
 DERIV_DIR = CALIBRATION_DIR / "derivatives"
 CALIB_DIR = CALIBRATION_DIR / "calib_temp"   # calibration maps for applying to target data (rename when happy)
 PLOT_DIR = CALIBRATION_DIR / "plots_temp"    # figures (rename when happy)
 
 # Target datasets the calibration is applied to
-CALIBER_DIR = ROOT / "caliber_phantom"
-INVIVO_DIR = ROOT / "invivo"
+CALIBER_DIR = DATA_DIR / "caliber_phantom"
+INVIVO_DIR = DATA_DIR / "invivo"
 
 # Second scanner (b=0 and b=800 scans along each axis, repeated), used to compare the scanners
-SCANNER2_DIR = ROOT / "scanner_2"
+SCANNER2_DIR = DATA_DIR / "scanner_2"
 
 # Scanner characterisation data (scanner_characterisation/)
-SNR_DIR = ROOT / "snr"
-B0_MAPPING_DIR = ROOT / "b0_mapping"
+SNR_DIR = DATA_DIR / "snr"
+B0_MAPPING_DIR = DATA_DIR / "b0_mapping"
 
 # --------------------------------------------------------------------------------------
 # File names
