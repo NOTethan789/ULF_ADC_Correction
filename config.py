@@ -12,7 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SRC_DIR = ROOT / "src"
-DATA_DIR = ROOT / "data"    # all datasets (not stored on GitHub)
+DATA_DIR = ROOT / "data"          # all datasets (not stored on GitHub)
+RESULTS_DIR = ROOT / "results"    # calibration maps and figures produced by the analysis (not stored on GitHub)
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
@@ -54,8 +55,8 @@ CALIBER_ADC_LABELS = {"H2O":[4, 3, 1, 11],
 
 CALIBRATION_DIR = DATA_DIR / "calibration"
 DERIV_DIR = CALIBRATION_DIR / "derivatives"
-CALIB_DIR = CALIBRATION_DIR / "calib_temp"   # calibration maps for applying to target data (rename when happy)
-PLOT_DIR = CALIBRATION_DIR / "plots_temp"    # figures (rename when happy)
+CALIB_DIR = RESULTS_DIR / "calibration_maps"   # calibration maps for applying to target data
+PLOT_DIR = RESULTS_DIR / "figures"             # figures
 
 # Target datasets the calibration is applied to
 CALIBER_DIR = DATA_DIR / "caliber_phantom"

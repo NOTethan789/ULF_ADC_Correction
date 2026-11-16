@@ -17,8 +17,8 @@ Outputs
         Volume i of each file corresponds to row i of the parameter file (as for the scan files); volumes of
         b=0 scans are zero. The b-value, duration, direction and sequence of every volume, and the settings
         used, are also stored in the NIfTI header (extension) as JSON.
-    calib_temp/<testname>_A_DUR_<ms>.nii.gz, <testname>_A_FULL.nii.gz   calibration maps
-    calib_temp/<testname>_calib_info.json                   settings and number of scans used for each fit
+    results/calibration_maps/<testname>_A_DUR_<ms>.nii.gz, <testname>_A_FULL.nii.gz   calibration maps
+    results/calibration_maps/<testname>_calib_info.json     settings and number of scans used for each fit
 
 The leave-one-out analyses do not use the saved calibration maps (they refit without the held-out repeat,
 see calib_utils.loo_bmap_predictions) but do use the per-scan maps saved here.
@@ -55,7 +55,7 @@ def save_per_scan_map(array_4d, fname, affine, meta):
 # ------------------------------------------------------------------------------
 # Load data
 # ------------------------------------------------------------------------------
-config.CALIB_DIR.mkdir(exist_ok=True)
+config.CALIB_DIR.mkdir(parents=True, exist_ok=True)
 
 print(f"Estimating calibration from the {config.SCAN_TYPE} scans: {config.SCANS_FNAME.name}")
 

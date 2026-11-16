@@ -6,6 +6,9 @@
 /data/*/*
 !/data/calibration/READ_ME.txt
 
+# ---- Results of the analysis (calibration maps, figures) ----
+/results/*
+
 # ---- Data / image file types, wherever they appear ----
 *.nii
 *.nii.gz
