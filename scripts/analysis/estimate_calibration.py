@@ -23,7 +23,7 @@ Outputs
 The leave-one-out analyses do not use the saved calibration maps (they refit without the held-out repeat,
 see calib_utils.loo_bmap_predictions) but do use the per-scan maps saved here.
 
-Settings are in config.py. Run from anywhere:  python analysis/estimate_calibration.py
+Settings are in config.py. Run from anywhere:  python scripts/analysis/estimate_calibration.py
 """
 
 import json
@@ -36,7 +36,7 @@ from tqdm import tqdm
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # project root, for config.py
+sys.path.insert(0, str(next(p for p in Path(__file__).resolve().parents if (p / "config.py").exists())))   # project root, for config.py
 import config
 import file_io as fio
 import registration as reg

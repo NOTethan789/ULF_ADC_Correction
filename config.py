@@ -1,5 +1,6 @@
 """
-Settings shared by the scripts and notebooks of the project (preprocessing/, analysis/, scanner_characterisation/).
+Settings shared by the scripts and notebooks of the project (scripts/preprocessing, scripts/analysis and
+scripts/scanner_characterisation).
 
 Change a value here and it changes everywhere, so the estimation script and all of the
 notebooks stay consistent. Importing this module also puts src/ on sys.path (so the
@@ -65,7 +66,7 @@ INVIVO_DIR = DATA_DIR / "invivo"
 # Second scanner (b=0 and b=800 scans along each axis, repeated), used to compare the scanners
 SCANNER2_DIR = DATA_DIR / "scanner_2"
 
-# Scanner characterisation data (scanner_characterisation/)
+# Scanner characterisation data (scripts/scanner_characterisation)
 SNR_DIR = DATA_DIR / "snr"
 B0_MAPPING_DIR = DATA_DIR / "b0_mapping"
 
