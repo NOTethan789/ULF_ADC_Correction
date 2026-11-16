@@ -1,5 +1,6 @@
 # Standard libraries
 import numpy as np
+import pandas as pd
 from scipy.ndimage import distance_transform_edt
 from functools import partial
 import nibabel as nib
@@ -192,7 +193,7 @@ def bspline_estimation(data, spacing, mask):
                                                  rescale_intensities=False,
                                                 convergence={'iters':[30, 20, 10, 5], 'tol':1e-6},
                                                 shrink_factor=2, 
-                                                spline_param=25, 
+                                                spline_param=50, 
                                                 return_bias_field=True)
     
     # Convert from ants images to numpy arrays
@@ -270,3 +271,105 @@ def minus_bd_map(s, s0, mask=None):
     minus_bd_map[valid] = np.log(s[valid] / s0[valid])
 
     return minus_bd_map
+
+
+def _fit_calibration(train_df, core_mask, gmap_col="gmap2_bspline"):
+    """
+    Fit calibration maps to the scans in train_df.
+    Returns (A, sigma) as calc_calib_maps.
+    """
+    gvecs = np.stack(train_df["grad_vec"].values, axis=0).astype(np.float32)
+    gmaps = np.stack(train_df[gmap_col].values, axis=-1).astype(np.float32)
+
+    return calc_calib_maps(gvecs, gmaps, core_mask, as_image=False)
+
+
+def loo_bmap_predictions(dwi_df, core_mask, eval_mask=None, levels=("scanner", "duration", "sequence"),
+                         bmap_col="bmap", gmap_col="gmap2_bspline", verbose=True):
+    """
+    Leave-one-repeat-out predictions of the b-value maps at three levels of calibration.
+
+    Repeat k of every sequence is held out in fold k. Everything used to predict a held-out scan
+    (the calibration maps, or the average b-map) is built only from the other repeats, so the
+    prediction is independent of the scan it is compared with.
+
+    Levels:
+        "scanner":  calibration maps fitted to all training scans (every duration, direction and b-value)
+        "duration": calibration maps fitted to the training scans with the same gradient duration
+        "sequence": average b-map of the training repeats of the same sequence
+
+    :param dwi_df: DataFrame of diffusion-weighted scans, ordered by scan time, with columns
+                   seq_name, dwi_grad_duration, TE, grad_vec, bmap_col and gmap_col.
+                   Every scan is used for training (whatever its b-value).
+    :param core_mask: mask the calibration maps are fitted within
+    :param eval_mask: boolean Series (index as dwi_df) selecting the scans to predict, e.g. the b=800 scans.
+                      Default is every scan.
+    :param levels: which calibration levels to predict
+    :return: DataFrame with the index of the evaluated scans and one column of predicted b-maps per
+             level, named pred_bmap_<level>
+    """
+
+    unknown = set(levels) - {"scanner", "duration", "sequence"}
+    if unknown:
+        raise ValueError(f"Unknown calibration levels: {unknown}")
+
+    df = dwi_df.copy()
+    df["repeat_idx"] = df.groupby("seq_name").cumcount()
+
+    # Restrict to complete repeats so every fold holds out one scan of each sequence
+    repeat_counts = df.groupby("seq_name").size()
+    n_repeats = repeat_counts.min()
+    if repeat_counts.nunique() != 1:
+        print("Warning: not all seq_name groups have the same number of repeats.")
+        print("Using n_repeats =", n_repeats, "(minimum count across seq_name groups)")
+    df = df[df["repeat_idx"] < n_repeats]
+
+    if eval_mask is None:
+        eval_mask = pd.Series(True, index=dwi_df.index)
+    eval_mask = eval_mask.reindex(df.index, fill_value=False).astype(bool)
+
+    predictions = {f"pred_bmap_{level}": {} for level in levels}
+
+    def predict(row, A, sigma):
+        return est_bmap(row["grad_vec"],
+                        delta_small=row["dwi_grad_duration"],
+                        delta_big=row["TE"] / 2,
+                        A=A,
+                        sigma=sigma,
+                        mask=core_mask)
+
+    for fold in range(n_repeats):
+
+        if verbose:
+            print(f"LOO fold {fold + 1}/{n_repeats}")
+
+        is_test = (df["repeat_idx"] == fold)
+        train_df = df[~is_test]
+        test_df = df[is_test & eval_mask]
+
+        # The held-out scans must never be used for training
+        assert train_df.index.intersection(test_df.index).empty
+
+        if "scanner" in levels:
+            A, sigma = _fit_calibration(train_df, core_mask, gmap_col)
+            for idx, row in test_df.iterrows():
+                predictions["pred_bmap_scanner"][idx] = predict(row, A, sigma)
+
+        if "duration" in levels:
+            for dur, dur_test_df in test_df.groupby("dwi_grad_duration"):
+                dur_train_df = train_df[train_df["dwi_grad_duration"] == dur]
+                A, sigma = _fit_calibration(dur_train_df, core_mask, gmap_col)
+                for idx, row in dur_test_df.iterrows():
+                    predictions["pred_bmap_duration"][idx] = predict(row, A, sigma)
+
+        if "sequence" in levels:
+            for seq, seq_test_df in test_df.groupby("seq_name"):
+                seq_train_df = train_df[train_df["seq_name"] == seq]
+                seq_bmap_avg = np.mean(np.stack(seq_train_df[bmap_col].values, axis=0), axis=0)
+                for idx in seq_test_df.index:
+                    predictions["pred_bmap_sequence"][idx] = seq_bmap_avg
+
+    pred_df = pd.DataFrame(predictions)
+    pred_df = pred_df.reindex(df.index[eval_mask])
+
+    return pred_df

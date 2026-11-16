@@ -70,7 +70,31 @@ def resample_array(img: np.ndarray, current_spacing: np.ndarray, target_spacing:
     return img_rs
 
 
-def translation_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None):
+def _resolve_spacing(spacing, ndim):
+
+    if spacing is None:
+        _spacing = [1.0] * ndim
+    elif isinstance(spacing, list):
+        _spacing = spacing.copy()
+    elif isinstance(spacing, (tuple, np.ndarray)):
+        _spacing = list(spacing)
+    else:
+        raise ValueError(f"Spacing must be a list, tuple or numpy array, but received type: {type(spacing)}")
+
+    if len(_spacing) != ndim:
+        raise ValueError(f"Spacing must have the same number of dimensions as the input image, but received spacing with {len(_spacing)} dimensions and image with {ndim} dimensions")
+
+    return _spacing
+
+
+def translation_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None, return_transform=False):
+    """
+    Register 'moving' to 'fixed' with a translation (ANTs, Mattes MI).
+
+    Returns the registered image, or (registered image, transform) if return_transform is True.
+    The transform is a dict of the ANTs affine parameters, which can be re-applied to another
+    image on the same grid with apply_translation.
+    """
 
     if not isinstance(fixed, np.ndarray) or not isinstance(moving, np.ndarray):
         raise ValueError(f"Fixed and moving images must be numpy arrays, but received types: fixed {type(fixed)}, moving {type(moving)}")
@@ -103,10 +127,39 @@ def translation_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None
     reg_a = trans["warpedmovout"]
     reg = reg_a.numpy().astype(np.float32)
 
+    if return_transform:
+        tx = ants.read_transform(trans["fwdtransforms"][0])
+        transform = {"parameters": np.asarray(tx.parameters, dtype=float).tolist(),
+                     "fixed_parameters": np.asarray(tx.fixed_parameters, dtype=float).tolist()}
+        return reg, transform
+
     return reg
 
 
-def scaling_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None, scale_tol=0.07):
+def apply_translation(image: np.ndarray, transform: dict, spacing=None):
+    """
+    Apply a transform returned by translation_registration to another image on the same grid.
+    """
+    _spacing = _resolve_spacing(spacing, image.ndim)
+    image_a = ants.from_numpy(image, spacing=_spacing)
+
+    tx = ants.create_ants_transform(transform_type="AffineTransform",
+                                    dimension=image.ndim,
+                                    parameters=np.asarray(transform["parameters"]),
+                                    fixed_parameters=np.asarray(transform["fixed_parameters"]))
+
+    reg_a = ants.apply_ants_transform_to_image(tx, image_a, image_a, interpolation="linear")
+    return reg_a.numpy().astype(np.float32)
+
+
+def scaling_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None, scale_tol=0.07, return_transform=False):
+    """
+    Register 'moving' to 'fixed' with an anisotropic scaling about the centroid of the fixed mask (SimpleITK).
+
+    Returns (registered image, stabilised), or (registered image, stabilised, transform) if return_transform
+    is True. The transform is None if registration failed to stabilise; otherwise it is a dict that can be
+    re-applied to another image on the same grid with apply_scaling.
+    """
 
     if not isinstance(fixed, np.ndarray) or not isinstance(moving, np.ndarray):
         raise ValueError(
@@ -218,14 +271,60 @@ def scaling_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None, sc
         )
 
         reg_moving = sitk.GetArrayFromImage(registered_moving_sitk) * last_volume_scaling
+
+        if return_transform:
+            transform = {"centre": [float(c) for c in com_fixed],
+                         "scale": last_axes_scaling.tolist(),
+                         "volume_scaling": last_volume_scaling}
+            return reg_moving, stabilised, transform
+
         return reg_moving, stabilised
 
     else:
         print("Failed to stabilise registration, returning original moving image")
+
+        if return_transform:
+            return moving, stabilised, None
+
         return moving, stabilised
 
 
-def register_to_b0(data_4d: np.ndarray, bvals: np.ndarray, spacing=None, b0_threshold=5):
+def apply_scaling(image: np.ndarray, transform: dict, spacing=None):
+    """
+    Apply a transform returned by scaling_registration to another image on the same grid.
+    Includes the same volume-scaling intensity correction as scaling_registration.
+    """
+    _spacing = _resolve_spacing(spacing, image.ndim)
+
+    image_itk = sitk.GetImageFromArray(image.astype(np.float32))
+    image_itk.SetSpacing(_spacing)
+
+    scale = sitk.ScaleTransform(3)
+    scale.SetCenter(transform["centre"])
+    scale.SetScale(transform["scale"])
+
+    registered_sitk = sitk.Resample(
+        image1=image_itk,
+        referenceImage=image_itk,
+        transform=scale,
+        interpolator=sitk.sitkLinear,
+        defaultPixelValue=0.0,
+        outputPixelType=image_itk.GetPixelID(),
+    )
+
+    return sitk.GetArrayFromImage(registered_sitk) * transform["volume_scaling"]
+
+
+def register_to_b0(data_4d: np.ndarray, bvals: np.ndarray, spacing=None, b0_threshold=5, return_transforms=False):
+    """
+    Register every volume in data_4d to the first b=0 volume (translation, then scaling).
+
+    Returns (registered_data, i_dropped), where i_dropped are the indices of volumes that failed to register
+    and are excluded from registered_data. If return_transforms is True, also returns a list with one entry
+    per input volume: {"translation": ..., "scaling": ...} for registered volumes, {"fixed": True} for the
+    reference volume and None for dropped volumes. Pass this list to apply_registration to register another
+    4D array (e.g. the noisy scans) in exactly the same way.
+    """
 
     # Load b-values and identify the index of the first b=0 scan to use as the fixed image for registration
     i0_b0 = np.where(bvals < b0_threshold)[0][0]
@@ -233,23 +332,59 @@ def register_to_b0(data_4d: np.ndarray, bvals: np.ndarray, spacing=None, b0_thre
 
     registered_vols = []
     i_dropped = []
+    transforms = []
     for i in tqdm(range(bvals.shape[0]), desc="Registering DWI images to b=0 image", mininterval=0.1):
         moving = data_4d[..., i]
 
         if i == i0_b0:
             registered_vols.append(moving)  # Fixed image goes unmodified
+            transforms.append({"fixed": True})
             continue
 
-        reg_moving_1 = translation_registration(fixed, moving, spacing)
-        reg_moving_2, stablised = scaling_registration(fixed, reg_moving_1, spacing)
+        reg_moving_1, translation = translation_registration(fixed, moving, spacing, return_transform=True)
+        reg_moving_2, stablised, scaling = scaling_registration(fixed, reg_moving_1, spacing, return_transform=True)
         
         if stablised:
             registered_vols.append(reg_moving_2)
+            transforms.append({"translation": translation, "scaling": scaling})
         else:
             i_dropped.append(i)
+            transforms.append(None)
 
     # --- Reassemble into 4D volume and save ---
     registered_data = np.stack(registered_vols, axis=-1)
     print("Registration complete")
 
+    if return_transforms:
+        return registered_data, np.array(i_dropped), transforms
+
     return registered_data, np.array(i_dropped)
+
+
+def apply_registration(data_4d: np.ndarray, transforms: list, spacing=None):
+    """
+    Apply the transforms from register_to_b0(..., return_transforms=True) to another 4D array with the
+    same grid and volume order. Volumes that were dropped during registration are dropped here too, so
+    the output matches the registered data from register_to_b0.
+    """
+
+    if data_4d.shape[-1] != len(transforms):
+        raise ValueError(f"data_4d has {data_4d.shape[-1]} volumes but {len(transforms)} transforms were supplied")
+
+    registered_vols = []
+    for i, transform in enumerate(tqdm(transforms, desc="Applying registration transforms", mininterval=0.1)):
+
+        if transform is None:
+            continue  # Volume was dropped during registration
+
+        moving = data_4d[..., i]
+
+        if "fixed" in transform:
+            registered_vols.append(moving)  # Reference image goes unmodified
+            continue
+
+        reg_moving_1 = apply_translation(moving, transform["translation"], spacing)
+        reg_moving_2 = apply_scaling(reg_moving_1, transform["scaling"], spacing)
+        registered_vols.append(reg_moving_2)
+
+    return np.stack(registered_vols, axis=-1)
