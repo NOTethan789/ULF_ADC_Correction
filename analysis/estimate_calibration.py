@@ -55,7 +55,7 @@ def save_per_scan_map(array_4d, fname, affine, meta):
 # ------------------------------------------------------------------------------
 # Load data
 # ------------------------------------------------------------------------------
-config.CALIB_DIR.mkdir(parents=True, exist_ok=True)
+config.RESULTS_CALIB_DIR.mkdir(parents=True, exist_ok=True)
 
 print(f"Estimating calibration from the {config.SCAN_TYPE} scans: {config.SCANS_FNAME.name}")
 

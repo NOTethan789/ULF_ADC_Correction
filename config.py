@@ -55,8 +55,8 @@ CALIBER_ADC_LABELS = {"H2O":[4, 3, 1, 11],
 
 CALIBRATION_DIR = DATA_DIR / "calibration"
 DERIV_DIR = CALIBRATION_DIR / "derivatives"
-CALIB_DIR = RESULTS_DIR / "calibration_maps"   # calibration maps for applying to target data
-PLOT_DIR = RESULTS_DIR / "figures"             # figures
+RESULTS_CALIB_DIR = RESULTS_DIR / "calibration_maps"   # calibration maps for applying to target data
+RESULTS_PLOT_DIR = RESULTS_DIR / "figures"             # figures
 
 # Target datasets the calibration is applied to
 CALIBER_DIR = DATA_DIR / "caliber_phantom"
@@ -85,7 +85,7 @@ GMAP2_FNAME = DERIV_DIR / f"calibration_GMAP2_BSPLINE_{SCAN_TYPE}.nii.gz"
 
 def a_dur_fname(duration):
     """File name of the calibration maps for a gradient duration (s)."""
-    return CALIB_DIR / f"calibration_A_DUR_{int(round(duration * 1e3))}.nii.gz"
+    return RESULTS_CALIB_DIR / f"calibration_A_DUR_{int(round(duration * 1e3))}.nii.gz"
 
 
 # Scanner 2 (preprocess_scanner2.ipynb). Same scan type as the calibration scans.
@@ -95,5 +95,5 @@ SCANNER2_SCANS_FNAME = SCANNER2_DERIV_DIR / f"scanner_2_{SCAN_FILES[SCAN_TYPE]}.
 SCANNER2_MASK_FNAME = SCANNER2_DERIV_DIR / "scanner_2_MASK.nii.gz"
 
 
-A_FULL_FNAME = CALIB_DIR / "calibration_A_FULL.nii.gz"
-CALIB_INFO_FNAME = CALIB_DIR / "calibration_calib_info.json"
+A_FULL_FNAME = RESULTS_CALIB_DIR / "calibration_A_FULL.nii.gz"
+CALIB_INFO_FNAME = RESULTS_CALIB_DIR / "calibration_calib_info.json"
