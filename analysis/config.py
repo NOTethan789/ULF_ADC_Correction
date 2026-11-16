@@ -59,6 +59,9 @@ PLOT_DIR = CALIBRATION_DIR / "plots_temp"    # figures (rename when happy)
 CALIBER_DIR = ROOT / "caliber_phantom"
 INVIVO_DIR = ROOT / "invivo"
 
+# Second scanner (b=0 and b=800 scans along each axis, repeated), used to compare the scanners
+SCANNER2_DIR = ROOT / "scanner_2"
+
 # --------------------------------------------------------------------------------------
 # File names
 # --------------------------------------------------------------------------------------
@@ -76,6 +79,13 @@ GMAP2_FNAME = DERIV_DIR / f"calibration_GMAP2_BSPLINE_{SCAN_TYPE}.nii.gz"
 def a_dur_fname(duration):
     """File name of the calibration maps for a gradient duration (s)."""
     return CALIB_DIR / f"calibration_A_DUR_{int(round(duration * 1e3))}.nii.gz"
+
+
+# Scanner 2 (preprocess_scanner2.ipynb). Same scan type as the calibration scans.
+SCANNER2_DERIV_DIR = SCANNER2_DIR / "derivatives"
+SCANNER2_PARAM_FNAME = SCANNER2_DERIV_DIR / "scanner_2_params.h5"
+SCANNER2_SCANS_FNAME = SCANNER2_DERIV_DIR / f"scanner_2_{SCAN_FILES[SCAN_TYPE]}.nii.gz"
+SCANNER2_MASK_FNAME = SCANNER2_DERIV_DIR / "scanner_2_MASK.nii.gz"
 
 
 A_FULL_FNAME = CALIB_DIR / "calibration_A_FULL.nii.gz"
