@@ -180,7 +180,7 @@ def crop_to_overlap(arr1, arr2):
     return arr1_crop, arr2_crop
 
 
-def bspline_estimation(data, spacing, mask, spline_param=50):
+def bspline_estimation(data, spacing, mask, spline_param=25):
 
     # Convert to Ants
     img_a = ants.from_numpy(data, spacing)
