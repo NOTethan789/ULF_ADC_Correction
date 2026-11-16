@@ -1,18 +1,19 @@
 """
-Settings shared by every script and notebook in analysis/.
+Settings shared by the scripts and notebooks of the project (preprocessing/, analysis/, scanner_characterisation/).
 
 Change a value here and it changes everywhere, so the estimation script and all of the
-plotting notebooks stay consistent. Importing this module also puts the project root on
-sys.path (so the modules in the root, e.g. calib_utils, can be imported) and defines
-absolute paths, so scripts work whatever directory they are run from.
+notebooks stay consistent. Importing this module also puts src/ on sys.path (so the
+modules there, e.g. calib_utils, can be imported) and defines absolute paths, so scripts
+work whatever directory they are run from.
 """
 
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent
+SRC_DIR = ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 # --------------------------------------------------------------------------------------
 # Data
@@ -61,6 +62,10 @@ INVIVO_DIR = ROOT / "invivo"
 
 # Second scanner (b=0 and b=800 scans along each axis, repeated), used to compare the scanners
 SCANNER2_DIR = ROOT / "scanner_2"
+
+# Scanner characterisation data (scanner_characterisation/)
+SNR_DIR = ROOT / "snr"
+B0_MAPPING_DIR = ROOT / "b0_mapping"
 
 # --------------------------------------------------------------------------------------
 # File names

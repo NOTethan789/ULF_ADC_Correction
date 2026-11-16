@@ -34,6 +34,9 @@ import pandas as pd
 import nibabel as nib
 from tqdm import tqdm
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # project root, for config.py
 import config
 import file_io as fio
 import registration as reg
