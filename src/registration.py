@@ -87,9 +87,10 @@ def _resolve_spacing(spacing, ndim):
     return _spacing
 
 
-def translation_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None, return_transform=False):
+def translation_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None, return_transform=False, type_of_transform="Translation"):
     """
-    Register 'moving' to 'fixed' with a translation (ANTs, Mattes MI).
+    Register 'moving' to 'fixed' with a translation (ANTs, Mattes MI). Pass type_of_transform="Rigid" for a
+    rigid (rotation + translation) registration, see rigid_registration.
 
     Returns the registered image, or (registered image, transform) if return_transform is True.
     The transform is a dict of the ANTs affine parameters, which can be re-applied to another
@@ -121,7 +122,7 @@ def translation_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None
     # apply translation registration
     trans = ants.registration(fixed=fixed_a, 
                               moving=moving_a, 
-                              type_of_transform="Translation",
+                              type_of_transform=type_of_transform,
                               grad_step=0.1,
                               metric="mattes")
     reg_a = trans["warpedmovout"]
@@ -136,9 +137,26 @@ def translation_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None
     return reg
 
 
+def rigid_registration(fixed: np.ndarray, moving: np.ndarray, spacing=None, return_transform=False):
+    """
+    Register 'moving' to 'fixed' with a rigid transform (rotation + translation; ANTs, Mattes MI).
+    The returned transform is applied with apply_translation, like a translation transform.
+    """
+    return translation_registration(fixed, moving, spacing, return_transform, type_of_transform="Rigid")
+
+
+def rotation_angles_deg(transform: dict):
+    """Rotation angles (degrees, about the x, y and z axes) of a transform from translation_registration or rigid_registration."""
+    R = np.asarray(transform["parameters"][:9], dtype=float).reshape(3, 3)
+    ax = np.degrees(np.arctan2(R[2, 1], R[2, 2]))
+    ay = np.degrees(-np.arcsin(np.clip(R[2, 0], -1, 1)))
+    az = np.degrees(np.arctan2(R[1, 0], R[0, 0]))
+    return [float(ax), float(ay), float(az)]
+
+
 def apply_translation(image: np.ndarray, transform: dict, spacing=None):
     """
-    Apply a transform returned by translation_registration to another image on the same grid.
+    Apply a transform returned by translation_registration or rigid_registration to another image on the same grid.
     """
     _spacing = _resolve_spacing(spacing, image.ndim)
     image_a = ants.from_numpy(image, spacing=_spacing)
@@ -315,9 +333,10 @@ def apply_scaling(image: np.ndarray, transform: dict, spacing=None):
     return sitk.GetArrayFromImage(registered_sitk) * transform["volume_scaling"]
 
 
-def register_to_b0(data_4d: np.ndarray, bvals: np.ndarray, spacing=None, b0_threshold=5, return_transforms=False):
+def register_to_b0(data_4d: np.ndarray, bvals: np.ndarray, spacing=None, b0_threshold=5, return_transforms=False, first_transform="translation"):
     """
-    Register every volume in data_4d to the first b=0 volume (translation, then scaling).
+    Register every volume in data_4d to the first b=0 volume (translation, then scaling). With
+    first_transform="rigid" the first step is a rigid (rotation + translation) registration instead.
 
     Returns (registered_data, i_dropped), where i_dropped are the indices of volumes that failed to register
     and are excluded from registered_data. If return_transforms is True, also returns a list with one entry
@@ -325,6 +344,10 @@ def register_to_b0(data_4d: np.ndarray, bvals: np.ndarray, spacing=None, b0_thre
     reference volume and None for dropped volumes. Pass this list to apply_registration to register another
     4D array (e.g. the noisy scans) in exactly the same way.
     """
+
+    if first_transform not in ("translation", "rigid"):
+        raise ValueError(f"first_transform must be 'translation' or 'rigid', received {first_transform}")
+    first_registration = rigid_registration if first_transform == "rigid" else translation_registration
 
     # Load b-values and identify the index of the first b=0 scan to use as the fixed image for registration
     i0_b0 = np.where(bvals < b0_threshold)[0][0]
@@ -341,7 +364,7 @@ def register_to_b0(data_4d: np.ndarray, bvals: np.ndarray, spacing=None, b0_thre
             transforms.append({"fixed": True})
             continue
 
-        reg_moving_1, translation = translation_registration(fixed, moving, spacing, return_transform=True)
+        reg_moving_1, translation = first_registration(fixed, moving, spacing, return_transform=True)
         reg_moving_2, stablised, scaling = scaling_registration(fixed, reg_moving_1, spacing, return_transform=True)
         
         if stablised:
@@ -354,6 +377,101 @@ def register_to_b0(data_4d: np.ndarray, bvals: np.ndarray, spacing=None, b0_thre
     # --- Reassemble into 4D volume and save ---
     registered_data = np.stack(registered_vols, axis=-1)
     print("Registration complete")
+
+    if return_transforms:
+        return registered_data, np.array(i_dropped), transforms
+
+    return registered_data, np.array(i_dropped)
+
+
+def register_pairs_to_b0(data_4d: np.ndarray, bvals: np.ndarray, directions, spacing=None, b0_threshold=5, return_transforms=False, b0_transform="translation", reference="first"):
+    """
+    Paired registration for protocols that acquire a b=0 scan and then a diffusion-weighted scan for each
+    direction. The volumes of data_4d must be in acquisition order.
+
+    1. Every b=0 volume is registered to a reference b=0 volume (same contrast, so robust). b0_transform is
+       "translation" or "rigid" (rotation + translation). reference is "first" (the first b=0 volume),
+       "middle" (the b=0 volume whose position is most central, i.e. the smallest largest translation to the
+       other b=0 volumes, found with a quick rigid registration of all b=0 volumes to the first) or the index
+       of a b=0 volume in data_4d.
+    2. A diffusion-weighted volume is paired with the most recent preceding b=0 volume of the same direction.
+       It receives the translation of its b=0 partner (the two were acquired close together, so the head
+       will have moved by about the same amount).
+    3. A scaling registration of the translated diffusion-weighted volume onto its translated b=0 partner then
+       corrects the distortion that is specific to the diffusion gradients.
+
+    Returns (registered_data, i_dropped) where i_dropped are volumes whose scaling registration failed to
+    stabilise and are excluded from registered_data. If return_transforms is True, a list with one entry per
+    input volume is also returned, in the format of register_to_b0 (the "translation" and "scaling" entries
+    are None where not applied), so it can be passed to apply_registration.
+    """
+
+    bvals = np.asarray(bvals)
+    directions = np.asarray(directions)
+    is_b0 = bvals < b0_threshold
+    if not is_b0.any():
+        raise ValueError("No b=0 volume to register to")
+    if b0_transform not in ("translation", "rigid"):
+        raise ValueError(f"b0_transform must be 'translation' or 'rigid', received {b0_transform}")
+    b0_registration = rigid_registration if b0_transform == "rigid" else translation_registration
+
+    i_b0 = np.where(is_b0)[0]
+    if reference == "first":
+        i_ref = int(i_b0[0])
+    elif reference == "middle":
+        # Position of every b=0 volume relative to the first one, then pick the volume whose largest
+        # distance to the others is smallest
+        shifts = np.zeros((i_b0.size, 3))
+        for k, i in enumerate(i_b0[1:], start=1):
+            _, tr = rigid_registration(data_4d[..., i_b0[0]], data_4d[..., i], spacing, return_transform=True)
+            shifts[k] = tr["parameters"][-3:]
+        dist = np.linalg.norm(shifts[:, None, :] - shifts[None, :, :], axis=-1)
+        i_ref = int(i_b0[np.argmin(dist.max(axis=1))])
+    elif isinstance(reference, (int, np.integer)) and reference in i_b0:
+        i_ref = int(reference)
+    else:
+        raise ValueError(f"reference must be 'first', 'middle' or the index of a b=0 volume, received {reference}")
+    print(f"Reference b=0 volume: {i_ref}")
+    fixed = data_4d[..., i_ref]
+
+    n_vols = bvals.shape[0]
+    registered = [None] * n_vols
+    transforms = [None] * n_vols
+    translations = {}
+    i_dropped = []
+
+    # --- 1. registration of the b=0 volumes ---
+    for i in tqdm(np.where(is_b0)[0], desc=f"{b0_transform.capitalize()} registration of b=0 volumes", mininterval=0.1):
+        if i == i_ref:
+            registered[i] = data_4d[..., i]
+            transforms[i] = {"fixed": True}
+            continue
+        reg, translation = b0_registration(fixed, data_4d[..., i], spacing, return_transform=True)
+        registered[i] = reg
+        translations[i] = translation
+        transforms[i] = {"translation": translation, "scaling": None}
+
+    # --- 2./3. pair every diffusion-weighted volume with its preceding b=0 and register it ---
+    for i in tqdm(np.where(~is_b0)[0], desc="Scaling registration of DWI volumes to their b=0", mininterval=0.1):
+        partners = [j for j in np.where(is_b0)[0] if j < i and directions[j] == directions[i]]
+        if not partners:
+            raise ValueError(f"Volume {i} (direction {directions[i]}) has no preceding b=0 volume of the same direction")
+        j = partners[-1]
+
+        translation = translations.get(j)   # None if the partner is the reference volume
+        moving = data_4d[..., i]
+        if translation is not None:
+            moving = apply_translation(moving, translation, spacing)
+
+        reg, stabilised, scaling = scaling_registration(registered[j], moving, spacing, return_transform=True)
+        if stabilised:
+            registered[i] = reg
+            transforms[i] = {"translation": translation, "scaling": scaling}
+        else:
+            i_dropped.append(i)
+
+    registered_data = np.stack([registered[i] for i in range(n_vols) if transforms[i] is not None], axis=-1)
+    print("Paired registration complete")
 
     if return_transforms:
         return registered_data, np.array(i_dropped), transforms
@@ -383,8 +501,11 @@ def apply_registration(data_4d: np.ndarray, transforms: list, spacing=None):
             registered_vols.append(moving)  # Reference image goes unmodified
             continue
 
-        reg_moving_1 = apply_translation(moving, transform["translation"], spacing)
-        reg_moving_2 = apply_scaling(reg_moving_1, transform["scaling"], spacing)
-        registered_vols.append(reg_moving_2)
+        reg_moving = moving
+        if transform.get("translation") is not None:
+            reg_moving = apply_translation(reg_moving, transform["translation"], spacing)
+        if transform.get("scaling") is not None:
+            reg_moving = apply_scaling(reg_moving, transform["scaling"], spacing)
+        registered_vols.append(reg_moving)
 
     return np.stack(registered_vols, axis=-1)
