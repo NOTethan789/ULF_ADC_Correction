@@ -36,7 +36,7 @@ SCAN_FILES = {"noisy": "RAW_REG",
 
 B0_THRESHOLD = 5     # b-values below this are b=0 scans
 SHRINK_DIST_MM = 6   # inset of the calibration mask from the threshold based mask (avoids boundary artefacts)
-SPLINE_PARAM = 25    # B-spline smoothing of the gradient maps (spline_param of the N4 bias field fit)
+SPLINE_PARAM = 50    # B-spline smoothing of the gradient maps (spline_param of the N4 bias field fit)
 B_EVAL = 700         # b-value from which scans are evaluated in the b=800 figures
 
 # --------------------------------------------------------------------------------------
